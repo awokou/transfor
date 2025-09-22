@@ -68,19 +68,7 @@ public class CreService {
             if (isCredit && EXCLUDED.equals(ligne.getCodeEntiteTGENTITE())) {
                 continue;
             }
-            CreLine cre = new CreLine();
-            cre.setCdapp(GV);
-            cre.setLntypcre(GV001);
-            cre.setTypeDocument(ligne.getTypeDocument());
-            cre.setCodeEntiteTGENTITE(ligne.getCodeEntiteTGENTITE());
-            cre.setDateDebutPeriode(ligne.getDateDebutPeriode());
-            cre.setDateFinPeriode(ligne.getDateFinPeriode());
-            cre.setSommeHT(ligne.getPrixUnitaireHT());
-            cre.setDevise(ligne.getDevise());
-            cre.setCdtypSol(A);
-            cre.setCdTvaUG("0");
-            cre.setCdCHMTVA("H");
-            cre.setTypDom("F");
+            CreLine cre = getCreLine(ligne);
             creLines.add(cre);
         }
 
@@ -106,6 +94,23 @@ public class CreService {
         creLines.add(sommeLine);
         // Générer le fichier CRE format fixe
         FixedWidthWriter.write(outputFile, creLines);
+    }
+
+    private static CreLine getCreLine(CaPaiementLine ligne) {
+        CreLine cre = new CreLine();
+        cre.setCdapp(GV);
+        cre.setLntypcre(GV001);
+        cre.setTypeDocument(ligne.getTypeDocument());
+        cre.setCodeEntiteTGENTITE(ligne.getCodeEntiteTGENTITE());
+        cre.setDateDebutPeriode(ligne.getDateDebutPeriode());
+        cre.setDateFinPeriode(ligne.getDateFinPeriode());
+        cre.setSommeHT(ligne.getPrixUnitaireHT());
+        cre.setDevise(ligne.getDevise());
+        cre.setCdtypSol(A);
+        cre.setCdTvaUG("0");
+        cre.setCdCHMTVA("H");
+        cre.setTypDom("F");
+        return cre;
     }
 
     // Lecture du fichier CSV source
