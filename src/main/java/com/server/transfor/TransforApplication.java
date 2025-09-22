@@ -1,6 +1,7 @@
 package com.server.transfor;
 
 import com.server.transfor.service.CreService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -13,6 +14,12 @@ import java.nio.file.Paths;
 
 @SpringBootApplication
 public class TransforApplication {
+
+    @Value("${file.input}")
+    private String inputCsv;
+
+    @Value("${file.output}")
+    private String outputTxt;
 
     private final CreService creService;
 
@@ -27,13 +34,12 @@ public class TransforApplication {
     @Bean
     CommandLineRunner run() {
         return args -> {
-            // Charger depuis le classpath
-            URL resourceUrl = getClass().getClassLoader().getResource("input/CA_PAIEMENT_20250123093141197.csv");
+            URL resourceUrl = getClass().getClassLoader().getResource(inputCsv);
             if (resourceUrl == null) {
-                throw new FileNotFoundException("Fichier CSV introuvable dans les ressources.");
+                throw new FileNotFoundException("File non trouvé dans le classpath: " + inputCsv);
             }
             Path input = Paths.get(resourceUrl.toURI());
-            Path output = Paths.get("src/main/resources/output/CRE_FICHIER.txt");
+            Path output = Paths.get(outputTxt);
             creService.processCAFile(input, output);
         };
     }
