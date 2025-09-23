@@ -153,8 +153,10 @@ public class FixedWidthWriter {
                 } else {
                     writer.write(padRight("", 1));
                 }
+                writer.write(" ");
+                writer.write(" ");
                 // TYPDOM(TYPE DE DOMAINE)
-                writer.write(padRight("", 1));
+                writer.write(padRight(line.getTypDom(), 1));
                 // Écrire ligne
                 writer.newLine();
             }
