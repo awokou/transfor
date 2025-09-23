@@ -18,9 +18,9 @@ public class CreLine {
     private LocalDate dateDebutPeriode;
     private LocalDate dateFinPeriode;
     private BigDecimal sommeHT;
-    private String devise;
-    private String cdtypSol;
+    private String devise; // "EUR"
+    private String cdtypSol; // "A"
     private String cdTvaUG;
     private String cdCHMTVA;
-    private String typDom;
+    private String typDom;// "F"
 }
