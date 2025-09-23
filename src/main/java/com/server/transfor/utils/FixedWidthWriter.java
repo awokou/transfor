@@ -29,6 +29,9 @@ public class FixedWidthWriter {
                         .plusMonths(1)
                         .withDayOfMonth(line.getDateFinPeriode().plusMonths(1).lengthOfMonth());
                 String dateApp = formatDate(dateReglement);
+
+                String  idcre = "IDCRE" + "-" +dateApp;
+
                 // RFDOSSIER : "TVA-MM-AAAA" basé sur date début
                 String mois = line.getDateDebutPeriode().format(DateTimeFormatter.ofPattern("MM"));
                 String annee = line.getDateDebutPeriode().format(DateTimeFormatter.ofPattern("yyyy"));
@@ -43,6 +46,8 @@ public class FixedWidthWriter {
                 writer.write(padRight("", 5));
                 // LNTYPCRE : 5 caractères
                 writer.write(padRight(line.getLntypcre(), 5));
+                writer.write(" ");
+                writer.write(" ");
                 // DAAREGLE : 8 caractères : date de fin période + 1 mois = dernier jour du mois suivant
                 writer.write(padRight(dateApp, 8));
                 // CDANN : 1 caractère
@@ -50,11 +55,13 @@ public class FixedWidthWriter {
                 // FILLER_01 : 1 caractère
                 writer.write(padRight("", 1));
                 // IDCRE : 17 caractères
-                writer.write(padRight("", 17));
+                writer.write(padRight(idcre, 17));
                 // CDINSTANCE : 34 caractères
                 writer.write(padRight("", 34));
                 // DADTO_A : 8 caractères same as DAAREGLE
                  writer.write(padRight(dateApp, 8));
+                writer.write(" ");
+                writer.write(" ");
                 // DADOP_A : 8 caractères same as DAAREGLE
                 writer.write(padRight(dateApp, 8));
                 // ZTECH001 : 3 blancs
@@ -92,7 +99,7 @@ public class FixedWidthWriter {
                 // CDNCRE : 1 blanc
                 writer.write(padRight("", 1));
                 // CDCRC : 12 caractères, ex "CRC06"
-                writer.write(padRight("CRC06", 12));
+                writer.write(padRight("06", 12));
                 // CDPRVN : 2 blancs
                 writer.write(padRight("", 2));
                 // ZTECH003 : 1 blanc
@@ -123,8 +130,12 @@ public class FixedWidthWriter {
                 writer.write(padRight("", 20));
                 // CDTYPSOL
                 writer.write(padRight(line.getCdtypSol(), 1));
+                writer.write(" ");
+                writer.write(" ");
                 // CDTVAUG
                 writer.write(padRight(line.getCdTvaUG(), 1));
+                writer.write(" ");
+                writer.write(" ");
                 // CDCHMTVA
                 writer.write(padRight(line.getCdCHMTVA(), 1));
                 // MTCREHT

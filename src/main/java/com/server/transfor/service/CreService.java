@@ -6,8 +6,6 @@ import com.server.transfor.utils.FixedWidthWriter;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -31,24 +29,16 @@ public class CreService {
     private static final String AC = "AC";
     private static final String AD = "AD";
     private static final String A = "A";
-    private final JavaMailSender mailSender;
-
-    public CreService(JavaMailSender mailSender) {
-        this.mailSender = mailSender;
-    }
 
     // Traitement principal
     public void processCAFile(Path inputFile, Path outputFile) throws IOException {
         List<CaPaiementLine> lines = readCsv(inputFile);
-
         // Calcul SOMME
         BigDecimal sommeAC = sumByType(lines, AC);
         BigDecimal sommeAD = sumByType(lines, AD);
         BigDecimal somme = sommeAC.subtract(sommeAD);
-
         //Determiner le sens
         boolean isCredit = somme.compareTo(BigDecimal.ZERO) >= 0;
-
         if (isCredit) {
             // Exclusion de l'entité 00018
             List<CaPaiementLine> filtered = filterByEntity(lines, EXCLUDED, false);
@@ -60,7 +50,6 @@ public class CreService {
             // sens Débit : rendre somme positive
             somme = somme.abs();
         }
-
         // Générer les lignes CRE
         List<CreLine> creLines = new ArrayList<>();
         // lignes normales
@@ -68,10 +57,9 @@ public class CreService {
             if (isCredit && EXCLUDED.equals(ligne.getCodeEntiteTGENTITE())) {
                 continue;
             }
-            CreLine cre = getCreLine(ligne);
+            CreLine cre = getLine(ligne);
             creLines.add(cre);
         }
-
         // trouver une ligne de l'entité 00018 pour récupérer les dates
         Optional<CaPaiementLine> ref = lines.stream()
                 .filter(l -> EXCLUDED.equals(l.getCodeEntiteTGENTITE()))
@@ -79,24 +67,13 @@ public class CreService {
 
         LocalDate debutRef = ref.map(CaPaiementLine::getDateDebutPeriode).orElse(LocalDate.now());
         LocalDate finRef = ref.map(CaPaiementLine::getDateFinPeriode).orElse(LocalDate.now());
-
-        CreLine sommeLine = new CreLine(GV, GV002,
-                isCredit ? AC : AD,
-                isCredit ? "99999" : "14000",
-                debutRef,
-                finRef,
-                somme,
-                "EUR",
-                A,
-                "0",
-                "H",
-                "F");
+        CreLine sommeLine = new CreLine(GV, GV002, isCredit ? AC : AD, isCredit ? "99999" : "14000", debutRef, finRef, somme, "EUR", A, "0", "H", "F");
         creLines.add(sommeLine);
         // Générer le fichier CRE format fixe
         FixedWidthWriter.write(outputFile, creLines);
     }
 
-    private static CreLine getCreLine(CaPaiementLine ligne) {
+    private CreLine getLine(CaPaiementLine ligne) {
         CreLine cre = new CreLine();
         cre.setCdapp(GV);
         cre.setLntypcre(GV001);
@@ -118,15 +95,12 @@ public class CreService {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMdd");
         try (Reader reader = Files.newBufferedReader(path);
              CSVParser parser = CSVParser.parse(reader, CSVFormat.DEFAULT.withDelimiter(';'))) {
-
             List<CaPaiementLine> lines = new ArrayList<>();
             int expectedSize = 19;
-
             for (CSVRecord chp : parser) {
                 if (chp.size() < expectedSize) {
                     continue;
                 }
-
                 lines.add(new CaPaiementLine(
                         chp.get(0), // typeDocument
                         chp.get(1), // devise
@@ -172,41 +146,13 @@ public class CreService {
     // Filtrer les lignes par code entité, keep=true pour garder, false pour exclure
     private List<CaPaiementLine> filterByEntity(List<CaPaiementLine> lines, String entity, boolean keep) {
         if (keep) {
-            //True
             return lines.stream()
                     .filter(l -> entity.equals(l.getCodeEntiteTGENTITE()))
                     .toList();
         } else {
-            //False
             return lines.stream()
                     .filter(l -> !entity.equals(l.getCodeEntiteTGENTITE()))
                     .toList();
         }
-    }
-
-    public void sendReportByEmail(String[] toEmail, int nbEntree, int nbSortie, List<String> erreurs, boolean ok) {
-        StringBuilder content = new StringBuilder();
-
-        content.append("Date de début de traitement: ").append(java.time.LocalDateTime.now()).append("\n");
-        content.append("Nombre de lignes en entrée: ").append(nbEntree).append("\n");
-        content.append("Nombre de lignes en sortie: ").append(nbSortie).append("\n");
-        content.append("Etat du traitement: ").append(ok ? "OK" : "KO").append("\n");
-
-        if (!erreurs.isEmpty()) {
-            content.append("Erreurs:\n");
-            for (String err : erreurs) {
-                content.append("- ").append(err).append("\n");
-            }
-        } else {
-            content.append("Aucune erreur détectée.\n");
-        }
-
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setTo(toEmail);
-        message.setFrom("");
-        message.setSubject("Rapport de traitement CA_PAIEMENT");
-        message.setText(content.toString());
-
-        mailSender.send(message);
     }
 }
