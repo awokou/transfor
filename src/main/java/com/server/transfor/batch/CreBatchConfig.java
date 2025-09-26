@@ -10,6 +10,11 @@ import org.springframework.context.annotation.Configuration;
 public class CreBatchConfig {
 
     @Bean
+    public CreCsvTasklet creCsvTasklet(){
+        return new CreCsvTasklet();
+    }
+
+    @Bean
     public PartitionHandler partitionHandler(JobRepository jobRepository) {
         TaskExecutorPartitionHandler taskExecutorPartitionHandler = new TaskExecutorPartitionHandler();
         taskExecutorPartitionHandler.setGridSize(3);
