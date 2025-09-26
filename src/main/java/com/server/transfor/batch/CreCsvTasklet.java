@@ -1,7 +1,9 @@
 package com.server.transfor.batch;
 
+import com.server.transfor.bean.AnomalieCsvBean;
 import com.server.transfor.bean.PaiementCsvBean;
 import com.server.transfor.bean.CreCsvBean;
+import com.server.transfor.exception.SourceFileException;
 import com.server.transfor.utils.WriterCsvBatch;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
@@ -42,13 +44,11 @@ public class CreCsvTasklet implements Tasklet, StepExecutionListener {
 
     @Override
     public RepeatStatus execute(StepContribution contribution, ChunkContext chunkContext) throws Exception {
-        log.info("Executing Tasklet: Processing data...");
         Path input = Paths.get("");
         Path output = Paths.get("");
-        processCAFile(input,output);
+        processCAFile(input, output);
         return RepeatStatus.FINISHED;
     }
-
 
     /**
      * Processus principal pour lire le fichier CSV d'entrée, calculer les sommes,
@@ -59,18 +59,25 @@ public class CreCsvTasklet implements Tasklet, StepExecutionListener {
      * @throws IOException
      */
     private void processCAFile(Path inputFile, Path outputFile) throws IOException {
-        List<PaiementCsvBean> lines = readCsv(inputFile);
+
+        // 1. Liste pour stocker les anomalies détectées
+        List<AnomalieCsvBean> anomalies = new ArrayList<>();
+
+        // 2. Lire le fichier CSV source avec collecte des anomalies
+        List<PaiementCsvBean> lines = readCsv(inputFile, anomalies);
+
+        int lignesEntree = lines.size();
 
         if (lines.isEmpty()) {
-            throw new IllegalArgumentException("Le fichier d'entrée est vide ou invalide.");
+            throw new SourceFileException("Le fichier d'entrée est vide ou invalide.");
         }
 
-        // Calcul Somme AC - AD
+        // 5. Calcul des sommes AC / AD
         BigDecimal sommeAC = sumByType(lines, AC);
         BigDecimal sommeAD = sumByType(lines, AD);
         BigDecimal somme = sommeAC.subtract(sommeAD);
 
-        //Determiner le sens
+        // 6. Détermination du sens : Crédit ou Débit
         boolean isCredit = somme.compareTo(BigDecimal.ZERO) >= 0;
         if (isCredit) {
 
@@ -79,10 +86,7 @@ public class CreCsvTasklet implements Tasklet, StepExecutionListener {
             BigDecimal ac2 = sumByType(filtered, AC);
             BigDecimal ad2 = sumByType(filtered, AD);
             somme = ac2.subtract(ad2);
-
-            // somme peut être positif ou négatif ici selon les données, conserver le signe
         } else {
-
             // sens Débit : rendre somme positive
             somme = somme.abs();
         }
@@ -99,7 +103,7 @@ public class CreCsvTasklet implements Tasklet, StepExecutionListener {
             creCsvBeans.add(cre);
         }
 
-        // trouver une ligne de l'entité 00018 pour récupérer les dates
+        // Trouver une ligne de l'entité 00018 pour récupérer les dates
         Optional<PaiementCsvBean> ref = lines.stream()
                 .filter(l -> EXCLUDED.equals(l.getCodeEntiteTGENTITE()))
                 .findFirst();
@@ -107,10 +111,20 @@ public class CreCsvTasklet implements Tasklet, StepExecutionListener {
         LocalDate debutRef = ref.map(PaiementCsvBean::getDateDebutPeriode).orElse(LocalDate.now());
         LocalDate finRef = ref.map(PaiementCsvBean::getDateFinPeriode).orElse(LocalDate.now());
         CreCsvBean sommeLine = new CreCsvBean(GV, GV002, isCredit ? AC : AD, isCredit ? "99999" : "14000", debutRef, finRef, somme, "EUR", A, "0", "H", "F");
+
+        // ligne de somme
         creCsvBeans.add(sommeLine);
 
         // Générer le fichier CRE format fixe
         WriterCsvBatch.writeCsvLine(outputFile, creCsvBeans);
+
+        log.info("Traitement terminé avec succès. Lignes en entrée : {}, Lignes en sortie : {}, Anomalies : {}",
+                lignesEntree,
+                creCsvBeans.size(),
+                anomalies.size()
+        );
+
+        //List<String> messages = anomalies.stream().map(AnomalieCsvBean::toString).toList();
     }
 
     /**
@@ -143,37 +157,68 @@ public class CreCsvTasklet implements Tasklet, StepExecutionListener {
      * @return
      * @throws IOException
      */
-    private List<PaiementCsvBean> readCsv(Path path) throws IOException {
+    private List<PaiementCsvBean> readCsv(Path path, List<AnomalieCsvBean> anomalies) throws IOException {
+
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMdd");
+
         try (Reader reader = Files.newBufferedReader(path);
              CSVParser parser = CSVParser.parse(reader, CSVFormat.DEFAULT.withDelimiter(';'))) {
             List<PaiementCsvBean> lines = new ArrayList<>();
+
             int expectedSize = 19;
+            int lineNumber = 0;
+
             for (CSVRecord chp : parser) {
+                lineNumber++;
+                // Vérification du nombre de colonnes
                 if (chp.size() < expectedSize) {
+                    anomalies.add(new AnomalieCsvBean(lineNumber, "Nombre de colonnes insuffisant", String.valueOf(chp.size())));
                     continue;
                 }
-                lines.add(new PaiementCsvBean(
-                        chp.get(0), // typeDocument
-                        chp.get(1), // devise
-                        chp.get(2), // codeAdresse
-                        chp.get(3), // codeSite
-                        chp.get(4), // axeAnalytique1Crc
-                        chp.get(5), // codeArticle
-                        chp.get(6), // designationArticle1
-                        chp.get(7), // designationArticle2
-                        chp.get(8), // axeAnalytique2Cgb
-                        chp.get(9), // codeEntiteTGENTITE
-                        LocalDate.parse(chp.get(10), formatter), // dateDebutPeriode
-                        LocalDate.parse(chp.get(11), formatter), // dateFinPeriode
-                        chp.get(12), // periodeFacturee
-                        parseBigDecimalSafely(chp.get(13)), // prixUnitaireHT
-                        parseBigDecimalSafely(chp.get(14)), // quantite
-                        chp.get(15), // numeroFactureSicof
-                        chp.get(16), // numeroCommandeFournisseur
-                        chp.get(17), // commentaire1
-                        chp.get(18)  // commentaire2
-                ));
+
+                if (chp.size() > expectedSize) {
+                    anomalies.add(new AnomalieCsvBean(lineNumber, "Nombre de colonnes excessif", String.valueOf(chp.size())));
+                    continue;
+                }
+                try {
+                    // Parsing des données
+                    String typeDocument = chp.get(0).trim();
+                    String devise = chp.get(1).trim();
+                    String codeAdresse = chp.get(2).trim();
+                    String codeSite = chp.get(3).trim();
+                    String axeAnalytique1Crc = chp.get(4).trim();
+                    String codeArticle = chp.get(5).trim();
+                    String designationArticle1 = chp.get(6).trim();
+                    String designationArticle2 = chp.get(7).trim();
+                    String axeAnalytique2Cgb = chp.get(8).trim();
+                    String codeEntiteTGENTITE = chp.get(9).trim();
+
+                    LocalDate dateDebutPeriode = LocalDate.parse(chp.get(10).trim(), formatter);
+                    LocalDate dateFinPeriode = LocalDate.parse(chp.get(11).trim(), formatter);
+
+                    String periodeFacturee = chp.get(12).trim();
+                    BigDecimal prixUnitaireHT = parseBigDecimalSafely(chp.get(13));
+                    BigDecimal quantite = parseBigDecimalSafely(chp.get(14));
+                    String numeroFactureSicof = chp.get(15).trim();
+                    String numeroCommandeFournisseur = chp.get(16).trim();
+                    String commentaire1 = chp.get(17).trim();
+                    String commentaire2 = chp.get(18).trim();
+
+                    // Vérifications métiers
+                    List<AnomalieCsvBean> ligneAnomalies = validateLine(lineNumber, typeDocument, devise, prixUnitaireHT, quantite, codeEntiteTGENTITE, dateDebutPeriode, dateFinPeriode);
+                    if (!ligneAnomalies.isEmpty()) {
+                        anomalies.addAll(ligneAnomalies);
+                        continue;
+                    }
+
+                    // Ligne valide
+                    PaiementCsvBean paiementCsvBean = new PaiementCsvBean(typeDocument, devise, codeAdresse, codeSite, axeAnalytique1Crc, codeArticle, designationArticle1, designationArticle2, axeAnalytique2Cgb, codeEntiteTGENTITE, dateDebutPeriode, dateFinPeriode, periodeFacturee, prixUnitaireHT, quantite, numeroFactureSicof, numeroCommandeFournisseur, commentaire1, commentaire2);
+
+                    lines.add(paiementCsvBean);
+
+                } catch (Exception e) {
+                    anomalies.add(new AnomalieCsvBean(lineNumber, "Format de date invalide", chp.get(10) + " ou " + chp.get(11)));
+                }
             }
 
             return lines;
@@ -226,5 +271,44 @@ public class CreCsvTasklet implements Tasklet, StepExecutionListener {
                     .filter(l -> !entity.equals(l.getCodeEntiteTGENTITE()))
                     .toList();
         }
+    }
+
+    /**
+     * Validation des règles métiers pour une ligne donnée
+     *
+     * @param lineNumber
+     * @param typeDocument
+     * @param devise
+     * @param prixUnitaireHT
+     * @param quantite
+     * @param codeEntiteTGENTITE
+     * @param dateDebut
+     * @param dateFin
+     * @return
+     */
+    private List<AnomalieCsvBean> validateLine(int lineNumber, String typeDocument, String devise, BigDecimal prixUnitaireHT, BigDecimal quantite, String codeEntiteTGENTITE, LocalDate dateDebut, LocalDate dateFin) {
+        List<AnomalieCsvBean> anomalies = new ArrayList<>();
+
+        if (typeDocument.isBlank()) {
+            anomalies.add(new AnomalieCsvBean(lineNumber, "Champ obligatoire vide", "Type de document"));
+        }
+
+        if (!"EUR".equalsIgnoreCase(devise)) {
+            anomalies.add(new AnomalieCsvBean(lineNumber, "Devise invalide (attendu: EUR)", devise));
+        }
+
+        if (prixUnitaireHT.compareTo(BigDecimal.ZERO) <= 0) {
+            anomalies.add(new AnomalieCsvBean(lineNumber, "Prix unitaire HT non positif", prixUnitaireHT.toPlainString()));
+        }
+
+        if (quantite.compareTo(BigDecimal.ZERO) < 0) {
+            anomalies.add(new AnomalieCsvBean(lineNumber, "Quantité négative", quantite.toPlainString()));
+        }
+
+        if (dateDebut.isAfter(dateFin)) {
+            anomalies.add(new AnomalieCsvBean(lineNumber, "Date de début après la date de fin", dateDebut + " > " + dateFin));
+        }
+
+        return anomalies;
     }
 }
