@@ -1,6 +1,6 @@
 package com.server.transfor.utils;
 
-import com.server.transfor.model.CreLine;
+import com.server.transfor.bean.CreCsvBean;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -13,17 +13,15 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 
-public class FixedWidthWriter {
+public class WriterCsvBatch {
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
-    private FixedWidthWriter() {
-        throw new UnsupportedOperationException("Utility class");
-    }
+    private WriterCsvBatch() {}
 
-    public static void write(Path path, List<CreLine> lines) throws IOException {
+    public static void writeCsvLine(Path path, List<CreCsvBean> lines) throws IOException {
         try (BufferedWriter writer = Files.newBufferedWriter(path)) {
-            for (CreLine line : lines) {
+            for (CreCsvBean line : lines) {
 
                 String licreug = line.getTypeDocument() + "-" + String.format("%05d", Integer.parseInt(line.getCodeEntiteTGENTITE())) + "-" + line.getDateDebutPeriode().format(DATE_FMT) + "-" + line.getDateFinPeriode().format(DATE_FMT);
 
@@ -176,6 +174,9 @@ public class FixedWidthWriter {
         return date.format(DATE_FMT);
     }
 
+    /**
+     * Cartes de correspondance pour le codage CRE
+     */
     private static final Map<Integer, Character> POSITIVE_CODES = Map.of(
             0, '{', 1, 'A', 2, 'B', 3, 'C', 4, 'D',
             5, 'E', 6, 'F', 7, 'G', 8, 'H', 9, 'I'
@@ -185,6 +186,12 @@ public class FixedWidthWriter {
             5, 'N', 6, 'O', 7, 'P', 8, 'Q', 9, 'R'
     );
 
+    /**
+     * Encode un montant en format CRE sur 17 caractères.
+     * Les 16 premiers sont des chiffres, le 17ème est un caractère de signe.
+     * @param montant Montant à encoder
+     * @return Montant encodé en format CRE
+     */
     private static String encodeMontantCRE(BigDecimal montant) {
         if (montant == null) {
             montant = BigDecimal.ZERO;

@@ -1,4 +1,4 @@
-package com.server.transfor.validators;
+package com.server.transfor.annotations;
 
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
