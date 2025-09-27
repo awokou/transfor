@@ -14,7 +14,15 @@ import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.StepExecutionListener;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.batch.core.step.tasklet.Tasklet;
+import org.springframework.batch.item.file.FlatFileItemReader;
+import org.springframework.batch.item.file.LineMapper;
+import org.springframework.batch.item.file.mapping.BeanWrapperFieldSetMapper;
+import org.springframework.batch.item.file.mapping.DefaultLineMapper;
+import org.springframework.batch.item.file.transform.DelimitedLineTokenizer;
 import org.springframework.batch.repeat.RepeatStatus;
+import org.springframework.beans.propertyeditors.CustomDateEditor;
+import org.springframework.beans.propertyeditors.CustomNumberEditor;
+import org.springframework.core.io.FileSystemResource;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -22,10 +30,12 @@ import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.text.DateFormat;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 
@@ -43,8 +53,8 @@ public class CreCsvTasklet implements Tasklet, StepExecutionListener {
 
     @Override
     public RepeatStatus execute(StepContribution contribution, ChunkContext chunkContext) throws Exception {
-        Path input = Paths.get("");
-        Path output = Paths.get("");
+        Path input = Paths.get("C:\\Project\\transfor\\src\\main\\resources\\input\\CA_PAIEMENT.csv");
+        Path output = Paths.get("C:\\Project\\transfor\\src\\main\\resources\\output\\test_CRE.txt");
         processCAFile(input, output);
         return RepeatStatus.FINISHED;
     }
@@ -58,22 +68,18 @@ public class CreCsvTasklet implements Tasklet, StepExecutionListener {
      * @throws IOException
      */
     private void processCAFile(Path inputFile, Path outputFile) throws IOException {
-
         // 1. Liste pour stocker les anomalies détectées
-        List<ErrorCsvBean> anomalies = new ArrayList<>();
-
+        List<ErrorCsvBean> errorCsvBeans = new ArrayList<>();
         // 2. Lire le fichier CSV source avec collecte des anomalies
-        List<PaiementCsvBean> lines = readCsv(inputFile, anomalies);
+        List<PaiementCsvBean> paiementCsvBeans = (List<PaiementCsvBean>) reader(inputFile);
 
-        int lignesEntree = lines.size();
-
-        if (lines.isEmpty()) {
+        if (paiementCsvBeans.isEmpty()) {
             throw new SourceFileException("Le fichier d'entrée est vide ou invalide.");
         }
 
         // 5. Calcul des sommes AC / AD
-        BigDecimal sommeAC = sumByType(lines, AC);
-        BigDecimal sommeAD = sumByType(lines, AD);
+        BigDecimal sommeAC = sumByType(paiementCsvBeans, AC);
+        BigDecimal sommeAD = sumByType(paiementCsvBeans, AD);
         BigDecimal somme = sommeAC.subtract(sommeAD);
 
         // 6. Détermination du sens : Crédit ou Débit
@@ -81,7 +87,7 @@ public class CreCsvTasklet implements Tasklet, StepExecutionListener {
         if (isCredit) {
 
             // Exclusion de l'entité 00018
-            List<PaiementCsvBean> filtered = filterByEntity(lines, EXCLUDED, false);
+            List<PaiementCsvBean> filtered = filterByEntity(paiementCsvBeans, EXCLUDED, false);
             BigDecimal ac2 = sumByType(filtered, AC);
             BigDecimal ad2 = sumByType(filtered, AD);
             somme = ac2.subtract(ad2);
@@ -94,7 +100,7 @@ public class CreCsvTasklet implements Tasklet, StepExecutionListener {
         List<CreCsvBean> creCsvBeans = new ArrayList<>();
 
         // lignes normales
-        for (PaiementCsvBean ligne : lines) {
+        for (PaiementCsvBean ligne : paiementCsvBeans) {
             if (isCredit && EXCLUDED.equals(ligne.getCodeEntiteTGENTITE())) {
                 continue;
             }
@@ -103,27 +109,18 @@ public class CreCsvTasklet implements Tasklet, StepExecutionListener {
         }
 
         // Trouver une ligne de l'entité 00018 pour récupérer les dates
-        Optional<PaiementCsvBean> ref = lines.stream()
+        Optional<PaiementCsvBean> ref = paiementCsvBeans.stream()
                 .filter(l -> EXCLUDED.equals(l.getCodeEntiteTGENTITE()))
                 .findFirst();
 
         LocalDate debutRef = ref.map(PaiementCsvBean::getDateDebutPeriode).orElse(LocalDate.now());
         LocalDate finRef = ref.map(PaiementCsvBean::getDateFinPeriode).orElse(LocalDate.now());
         CreCsvBean sommeLine = new CreCsvBean(GV, GV002, isCredit ? AC : AD, isCredit ? "99999" : "14000", debutRef, finRef, somme, "EUR", A, "0", "H", "F");
-
         // ligne de somme
         creCsvBeans.add(sommeLine);
-
         // Générer le fichier CRE format fixe
         WriterCsvBatch.writeCsvLine(outputFile, creCsvBeans);
-
-        log.info("Traitement terminé avec succès. Lignes en entrée : {}, Lignes en sortie : {}, Anomalies : {}",
-                lignesEntree,
-                creCsvBeans.size(),
-                anomalies.size()
-        );
-
-        //List<String> messages = anomalies.stream().map(AnomalieCsvBean::toString).toList();
+        log.info("Traitement terminé avec succès. Lignes en entrée : {}, Lignes en sortie : {}, Anomalies : {}", paiementCsvBeans.size(), creCsvBeans.size(), errorCsvBeans.size());
     }
 
     /**
@@ -147,6 +144,35 @@ public class CreCsvTasklet implements Tasklet, StepExecutionListener {
         cre.setCdCHMTVA("H");
         cre.setTypDom("F");
         return cre;
+    }
+
+    public FlatFileItemReader<PaiementCsvBean> reader(Path path) {
+        FlatFileItemReader<PaiementCsvBean> reader = new FlatFileItemReader<>();
+        reader.setResource(new FileSystemResource(path));
+        reader.setLinesToSkip(0); // Aucune ligne à sauter (car pas d’en-tête)
+        reader.setLineMapper(lineMapper());
+        return reader;
+    }
+
+    public LineMapper<PaiementCsvBean> lineMapper() {
+        DefaultLineMapper<PaiementCsvBean> lineMapper = new DefaultLineMapper<>();
+
+        DelimitedLineTokenizer tokenizer = new DelimitedLineTokenizer();
+        tokenizer.setDelimiter(";");
+        tokenizer.setNames("typeDocument", "codeEntiteTGENTITE", "dateDebutPeriode", "dateFinPeriode", "montant", "devise");
+        tokenizer.setStrict(false); // Tolère les champs manquants si nécessaire
+
+        BeanWrapperFieldSetMapper<PaiementCsvBean> fieldSetMapper = new BeanWrapperFieldSetMapper<>();
+        fieldSetMapper.setTargetType(PaiementCsvBean.class);
+        fieldSetMapper.setCustomEditors(Map.of(
+                LocalDate.class, new CustomDateEditor((DateFormat) DateTimeFormatter.ofPattern("yyyy-MM-dd").toFormat(), true),
+                BigDecimal.class, new CustomNumberEditor(BigDecimal.class, true)
+        ));
+
+        lineMapper.setLineTokenizer(tokenizer);
+        lineMapper.setFieldSetMapper(fieldSetMapper);
+
+        return lineMapper;
     }
 
     /**
