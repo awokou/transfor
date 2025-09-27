@@ -7,13 +7,13 @@ import lombok.Setter;
 @Getter
 @Setter
 @NoArgsConstructor
-public class AnomalieCsvBean {
+public class ErrorCsvBean {
 
     private  int ligne;
     private  String libelle;
     private  String valeurError;
 
-    public AnomalieCsvBean(int ligne, String libelle, String valeurError) {
+    public ErrorCsvBean(int ligne, String libelle, String valeurError) {
         this.ligne = ligne;
         this.libelle = libelle;
         this.valeurError = valeurError;

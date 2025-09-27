@@ -1,6 +1,6 @@
 package com.server.transfor.batch;
 
-import com.server.transfor.bean.AnomalieCsvBean;
+import com.server.transfor.bean.ErrorCsvBean;
 import com.server.transfor.bean.PaiementCsvBean;
 import com.server.transfor.bean.CreCsvBean;
 import com.server.transfor.exception.SourceFileException;
@@ -60,7 +60,7 @@ public class CreCsvTasklet implements Tasklet, StepExecutionListener {
     private void processCAFile(Path inputFile, Path outputFile) throws IOException {
 
         // 1. Liste pour stocker les anomalies détectées
-        List<AnomalieCsvBean> anomalies = new ArrayList<>();
+        List<ErrorCsvBean> anomalies = new ArrayList<>();
 
         // 2. Lire le fichier CSV source avec collecte des anomalies
         List<PaiementCsvBean> lines = readCsv(inputFile, anomalies);
@@ -156,7 +156,7 @@ public class CreCsvTasklet implements Tasklet, StepExecutionListener {
      * @return
      * @throws IOException
      */
-    private List<PaiementCsvBean> readCsv(Path path, List<AnomalieCsvBean> anomalies) throws IOException {
+    private List<PaiementCsvBean> readCsv(Path path, List<ErrorCsvBean> errorCsvBeans) throws IOException {
 
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMdd");
 
@@ -167,46 +167,46 @@ public class CreCsvTasklet implements Tasklet, StepExecutionListener {
             int expectedSize = 19;
             int lineNumber = 0;
 
-            for (CSVRecord chp : parser) {
+            for (CSVRecord record : parser) {
                 lineNumber++;
                 // Vérification du nombre de colonnes
-                if (chp.size() < expectedSize) {
-                    anomalies.add(new AnomalieCsvBean(lineNumber, "Nombre de colonnes insuffisant", String.valueOf(chp.size())));
+                if (record.size() < expectedSize) {
+                    errorCsvBeans.add(new ErrorCsvBean(lineNumber, "Nombre de colonnes insuffisant", String.valueOf(record.size())));
                     continue;
                 }
 
-                if (chp.size() > expectedSize) {
-                    anomalies.add(new AnomalieCsvBean(lineNumber, "Nombre de colonnes excessif", String.valueOf(chp.size())));
+                if (record.size() > expectedSize) {
+                    errorCsvBeans.add(new ErrorCsvBean(lineNumber, "Nombre de colonnes excessif", String.valueOf(record.size())));
                     continue;
                 }
                 try {
                     // Parsing des données
-                    String typeDocument = chp.get(0).trim();
-                    String devise = chp.get(1).trim();
-                    String codeAdresse = chp.get(2).trim();
-                    String codeSite = chp.get(3).trim();
-                    String axeAnalytique1Crc = chp.get(4).trim();
-                    String codeArticle = chp.get(5).trim();
-                    String designationArticle1 = chp.get(6).trim();
-                    String designationArticle2 = chp.get(7).trim();
-                    String axeAnalytique2Cgb = chp.get(8).trim();
-                    String codeEntiteTGENTITE = chp.get(9).trim();
+                    String typeDocument = record.get(0).trim();
+                    String devise = record.get(1).trim();
+                    String codeAdresse = record.get(2).trim();
+                    String codeSite = record.get(3).trim();
+                    String axeAnalytique1Crc = record.get(4).trim();
+                    String codeArticle = record.get(5).trim();
+                    String designationArticle1 = record.get(6).trim();
+                    String designationArticle2 = record.get(7).trim();
+                    String axeAnalytique2Cgb = record.get(8).trim();
+                    String codeEntiteTGENTITE = record.get(9).trim();
 
-                    LocalDate dateDebutPeriode = LocalDate.parse(chp.get(10).trim(), formatter);
-                    LocalDate dateFinPeriode = LocalDate.parse(chp.get(11).trim(), formatter);
+                    LocalDate dateDebutPeriode = LocalDate.parse(record.get(10).trim(), formatter);
+                    LocalDate dateFinPeriode = LocalDate.parse(record.get(11).trim(), formatter);
 
-                    String periodeFacturee = chp.get(12).trim();
-                    BigDecimal prixUnitaireHT = parseBigDecimalSafely(chp.get(13));
-                    BigDecimal quantite = parseBigDecimalSafely(chp.get(14));
-                    String numeroFactureSicof = chp.get(15).trim();
-                    String numeroCommandeFournisseur = chp.get(16).trim();
-                    String commentaire1 = chp.get(17).trim();
-                    String commentaire2 = chp.get(18).trim();
+                    String periodeFacturee = record.get(12).trim();
+                    BigDecimal prixUnitaireHT = parseBigDecimalSafely(record.get(13));
+                    BigDecimal quantite = parseBigDecimalSafely(record.get(14));
+                    String numeroFactureSicof = record.get(15).trim();
+                    String numeroCommandeFournisseur = record.get(16).trim();
+                    String commentaire1 = record.get(17).trim();
+                    String commentaire2 = record.get(18).trim();
 
                     // Vérifications métiers
-                    List<AnomalieCsvBean> ligneAnomalies = validateLine(lineNumber, typeDocument, devise, prixUnitaireHT, quantite, codeEntiteTGENTITE, dateDebutPeriode, dateFinPeriode);
+                    List<ErrorCsvBean> ligneAnomalies = validateLine(lineNumber, typeDocument, devise, prixUnitaireHT, quantite, codeEntiteTGENTITE, dateDebutPeriode, dateFinPeriode);
                     if (!ligneAnomalies.isEmpty()) {
-                        anomalies.addAll(ligneAnomalies);
+                        errorCsvBeans.addAll(ligneAnomalies);
                         continue;
                     }
 
@@ -216,7 +216,7 @@ public class CreCsvTasklet implements Tasklet, StepExecutionListener {
                     lines.add(paiementCsvBean);
 
                 } catch (Exception e) {
-                    anomalies.add(new AnomalieCsvBean(lineNumber, "Format de date invalide", chp.get(10) + " ou " + chp.get(11)));
+                    errorCsvBeans.add(new ErrorCsvBean(lineNumber, "Format de date invalide", record.get(10) + " ou " + record.get(11)));
                 }
             }
 
@@ -285,27 +285,27 @@ public class CreCsvTasklet implements Tasklet, StepExecutionListener {
      * @param dateFin
      * @return
      */
-    private List<AnomalieCsvBean> validateLine(int lineNumber, String typeDocument, String devise, BigDecimal prixUnitaireHT, BigDecimal quantite, String codeEntiteTGENTITE, LocalDate dateDebut, LocalDate dateFin) {
-        List<AnomalieCsvBean> anomalies = new ArrayList<>();
+    private List<ErrorCsvBean> validateLine(int lineNumber, String typeDocument, String devise, BigDecimal prixUnitaireHT, BigDecimal quantite, String codeEntiteTGENTITE, LocalDate dateDebut, LocalDate dateFin) {
+        List<ErrorCsvBean> anomalies = new ArrayList<>();
 
         if (typeDocument.isBlank()) {
-            anomalies.add(new AnomalieCsvBean(lineNumber, "Champ obligatoire vide", "Type de document"));
+            anomalies.add(new ErrorCsvBean(lineNumber, "Champ obligatoire vide", "Type de document"));
         }
 
         if (!"EUR".equalsIgnoreCase(devise)) {
-            anomalies.add(new AnomalieCsvBean(lineNumber, "Devise invalide (attendu: EUR)", devise));
+            anomalies.add(new ErrorCsvBean(lineNumber, "Devise invalide (attendu: EUR)", devise));
         }
 
         if (prixUnitaireHT.compareTo(BigDecimal.ZERO) <= 0) {
-            anomalies.add(new AnomalieCsvBean(lineNumber, "Prix unitaire HT non positif", prixUnitaireHT.toPlainString()));
+            anomalies.add(new ErrorCsvBean(lineNumber, "Prix unitaire HT non positif", prixUnitaireHT.toPlainString()));
         }
 
         if (quantite.compareTo(BigDecimal.ZERO) < 0) {
-            anomalies.add(new AnomalieCsvBean(lineNumber, "Quantité négative", quantite.toPlainString()));
+            anomalies.add(new ErrorCsvBean(lineNumber, "Quantité négative", quantite.toPlainString()));
         }
 
         if (dateDebut.isAfter(dateFin)) {
-            anomalies.add(new AnomalieCsvBean(lineNumber, "Date de début après la date de fin", dateDebut + " > " + dateFin));
+            anomalies.add(new ErrorCsvBean(lineNumber, "Date de début après la date de fin", dateDebut + " > " + dateFin));
         }
 
         return anomalies;

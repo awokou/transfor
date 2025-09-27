@@ -22,7 +22,6 @@ public class CreBatchConfig {
     }
 
     @Bean
-    @Qualifier("step1Cre")
     protected Step step1Cre(JobRepository jobRepository, PlatformTransactionManager transactionManager) {
         return new StepBuilder("step1Cre", jobRepository)
                 .tasklet(creCsvTasklet(), transactionManager)
